@@ -3,13 +3,16 @@ import { execute, query } from "@/lib/db/client";
 
 export type ChatMessage = { role: "USER" | "ASSISTANT"; content: string };
 
-export async function getOrCreateConversation(input: { conversationId?: string; sessionKey: string }): Promise<string> {
+export async function getOrCreateConversation(input: { conversationId?: string; sessionKey: string; userId?: string }): Promise<string> {
   if (input.conversationId) {
-    const rows = await query<{ id: string }>("SELECT id FROM conversations WHERE id=$1 AND session_key=$2 AND status='OPEN'", [input.conversationId, input.sessionKey]);
+    const rows = await query<{ id: string }>(
+      "SELECT id FROM conversations WHERE id=$1 AND session_key=$2 AND user_id IS NOT DISTINCT FROM $3 AND status='OPEN'",
+      [input.conversationId, input.sessionKey, input.userId ?? null],
+    );
     if (rows[0]) return rows[0].id;
   }
   const id = randomUUID();
-  await execute("INSERT INTO conversations(id, session_key) VALUES ($1,$2)", [id, input.sessionKey]);
+  await execute("INSERT INTO conversations(id, user_id, session_key) VALUES ($1,$2,$3)", [id, input.userId ?? null, input.sessionKey]);
   return id;
 }
 
@@ -42,12 +45,48 @@ export async function startAgentRun(conversationId: string, modelProvider: strin
   return id;
 }
 
-export async function recordAgentTool(runId: string, argumentsValue: Record<string, unknown>, resultSummary: Record<string, unknown>): Promise<void> {
+export async function recordAgentTool(runId: string, toolName: string, argumentsValue: Record<string, unknown>, resultSummary: Record<string, unknown>): Promise<void> {
   await execute(
     `INSERT INTO agent_tool_calls(id, agent_run_id, tool_name, arguments, result_summary, status)
-     VALUES ($1,$2,'search_catalog',$3::jsonb,$4::jsonb,'COMPLETED')`,
-    [randomUUID(), runId, JSON.stringify(argumentsValue), JSON.stringify(resultSummary)],
+     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,'COMPLETED')`,
+    [randomUUID(), runId, toolName, JSON.stringify(argumentsValue), JSON.stringify(resultSummary)],
   );
+}
+
+export type OwnOrderStatus = {
+  id: string;
+  order_number: string;
+  status: string;
+  total_amount: number;
+  payment_status: string | null;
+  created_at: string;
+};
+
+export async function getOwnOrderStatus(userId: string, orderNumber?: string): Promise<OwnOrderStatus | null> {
+  const params: unknown[] = [userId];
+  const orderClause = orderNumber ? "AND o.order_number=$2" : "";
+  if (orderNumber) params.push(orderNumber);
+  const rows = await query<OwnOrderStatus>(
+    `SELECT o.id, o.order_number, o.status, o.total_amount, o.created_at,
+            p.status AS payment_status
+     FROM orders o LEFT JOIN LATERAL (
+       SELECT status FROM payments WHERE order_id=o.id ORDER BY created_at DESC LIMIT 1
+     ) p ON true
+     WHERE o.user_id=$1 ${orderClause}
+     ORDER BY o.created_at DESC LIMIT 1`,
+    params,
+  );
+  return rows[0] ? { ...rows[0], total_amount: Number(rows[0].total_amount) } : null;
+}
+
+export async function createSupportTicket(input: { conversationId: string; userId?: string; subject: string; summary: string }): Promise<string> {
+  const id = randomUUID();
+  await execute(
+    "INSERT INTO support_tickets(id, conversation_id, user_id, subject, summary) VALUES ($1,$2,$3,$4,$5)",
+    [id, input.conversationId, input.userId ?? null, input.subject, input.summary],
+  );
+  await execute("UPDATE conversations SET status='HANDED_OFF', updated_at=now() WHERE id=$1", [input.conversationId]);
+  return id;
 }
 
 export async function finishAgentRun(runId: string, input: { status: "COMPLETED" | "FAILED"; inputTokens?: number; outputTokens?: number; errorMessage?: string; latencyMs: number }): Promise<void> {

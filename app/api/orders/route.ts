@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createOrder } from "@/lib/db/orders";
+import { customerFromRequest } from "@/lib/auth";
 import { allowAttempt, hasAdminRequestHeader, isSameOrigin, requestFingerprint } from "@/lib/security/request";
 
 const orderSchema = z.object({
@@ -17,7 +18,9 @@ export async function POST(request: NextRequest) {
   const parsed = orderSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "주문 정보를 확인해 주세요." }, { status: 400 });
   try {
-    return NextResponse.json({ order: await createOrder(parsed.data) }, { status: 201 });
+    const customer = await customerFromRequest(request);
+    if (!customer) return NextResponse.json({ error: "고객 로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ order: await createOrder({ ...parsed.data, email: customer.email, userId: customer.id }) }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && ["PRODUCT_NOT_FOUND", "PRODUCT_UNAVAILABLE"].includes(error.message)) {
       return NextResponse.json({ error: "판매 중인 상품과 재고를 다시 확인해 주세요." }, { status: 409 });

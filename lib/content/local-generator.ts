@@ -32,6 +32,11 @@ function productSource(product: Product, field: "description" | "shortDescriptio
   return `product:${product.id}:${field}`;
 }
 
+function objectParticle(value: string) {
+  const code = value.charCodeAt(value.length - 1) - 0xac00;
+  return code >= 0 && code <= 11171 && code % 28 !== 0 ? "을" : "를";
+}
+
 function primaryFact(product: Product, facts: ProductFact[]) {
   return facts[0] ?? {
     id: productSource(product, "description"),
@@ -98,7 +103,7 @@ export function buildLocalDetailDraft(product: Product, facts: ProductFact[]): {
       id: "cta",
       type: "cta",
       eyebrow: "JEONGSEOK MALL",
-      title: `${product.name}을 자세히 확인해 보세요.`,
+      title: `${product.name}${objectParticle(product.name)} 자세히 확인해 보세요.`,
       body: `${product.price.toLocaleString("ko-KR")}원`,
       factIds: [productSource(product, "price")],
     },
@@ -179,4 +184,3 @@ export function buildLocalShortDraft(product: Product, facts: ProductFact[], dur
     },
   };
 }
-

@@ -6,6 +6,8 @@ import { ProductArt } from "@/components/product-art";
 import { formatWon } from "@/lib/format";
 import { getProductBySlug, getProductFacts, listProducts } from "@/lib/db/products";
 import { ProductCard } from "@/components/product-card";
+import { PublishedDetail } from "@/components/published-detail";
+import { getPublishedDetailVersion } from "@/lib/db/content";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const product = await getProductBySlug(slug);
   if (!product) notFound();
   const facts = await getProductFacts(product.id);
+  const publishedDetail = await getPublishedDetailVersion(product.detailPageVersionId);
   const related = (await listProducts({ category: product.category })).filter((item) => item.id !== product.id).slice(0, 3);
 
   return <main className="detail-page">
@@ -34,11 +37,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       </div>
     </section>
 
-    <section className="detail-content-intro">
+    {publishedDetail ? <PublishedDetail detail={publishedDetail} /> : <section className="detail-content-intro">
       <span className="kicker">DETAIL PAGE / APPROVAL READY</span>
       <h2>정돈은 더 많은 물건이 아니라<br /><em>자리의 기준</em>에서 시작됩니다.</h2>
       <p>{product.description} 상세페이지 자동생성 기능이 활성화되면 상품 팩트와 근거가 연결된 승인 버전이 이 영역에 게시됩니다.</p>
-    </section>
+    </section>}
 
     <section className="fact-band">
       <div><SparkIcon /><span>FACT-GROUNDED CONTENT</span></div>

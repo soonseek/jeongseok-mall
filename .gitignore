@@ -6,4 +6,5 @@ node_modules/
 coverage/
 dist/
 *.log
+tsconfig.tsbuildinfo
 render-output/
