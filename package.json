@@ -13,6 +13,9 @@
     "lint": "eslint .",
     "test": "node --test tests/*.test.mjs",
     "db:init": "node --import tsx scripts/init-db.ts",
+    "smoke:prepare": "node --import tsx scripts/smoke-local.ts prepare",
+    "smoke:local": "node --import tsx scripts/smoke-local.ts run",
+    "smoke:cleanup": "node --import tsx scripts/smoke-local.ts cleanup",
     "worker": "node --import tsx worker.ts",
     "check": "npm run lint && npm run test && npm run build"
   },
@@ -20,11 +23,12 @@
     "@electric-sql/pglite": "^0.3.10",
     "@tosspayments/tosspayments-sdk": "^2.7.1",
     "jose": "^6.1.0",
-    "next": "16.2.6",
+    "next": "^16.3.1",
     "openai": "^7.4.0",
     "pg": "^8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "sharp": "^0.35.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -33,7 +37,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "^16.3.1",
     "tsx": "^4.20.6",
     "typescript": "5.9.3"
   }

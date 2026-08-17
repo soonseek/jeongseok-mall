@@ -13,6 +13,7 @@ export function SiteHeader() {
     ["/products?category=DESK", "DESK"],
     ["/products?category=MOBILE", "MOBILE"],
     ["/products?category=FOCUS", "FOCUS"],
+    ["/policies", "POLICY"],
     ["/about", "ABOUT"],
   ];
 

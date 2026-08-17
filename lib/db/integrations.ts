@@ -44,6 +44,17 @@ export async function getIntegrationSecret(kind: IntegrationKind, environment: I
   return rows[0] ?? null;
 }
 
+export async function getIntegrationSecretById(id: string): Promise<SecretRow | null> {
+  const rows = await query<SecretRow>(
+    `SELECT id, kind, provider, label, environment, status, key_suffix, settings,
+            last_checked_at, last_check_message, updated_at,
+            encrypted_secret, secret_nonce, secret_tag
+     FROM integration_configs WHERE id=$1 LIMIT 1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function saveIntegration(input: {
   kind: IntegrationKind;
   provider: string;
@@ -93,4 +104,21 @@ export async function disableIntegration(id: string, actorId: string): Promise<b
     "UPDATE integration_configs SET status = 'DISABLED', updated_by = $2, updated_at = now() WHERE id = $1",
     [id, actorId],
   )) > 0;
+}
+
+export async function recordIntegrationCheck(input: { id: string; passed: boolean; message: string; latencyMs: number; actorId: string }): Promise<IntegrationSummary | null> {
+  const checkId = randomUUID();
+  await execute(
+    `INSERT INTO integration_health_checks(id, integration_id, status, message, latency_ms, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [checkId, input.id, input.passed ? "PASSED" : "FAILED", input.message.slice(0, 300), input.latencyMs, input.actorId],
+  );
+  const rows = await query<IntegrationSummary>(
+    `UPDATE integration_configs SET status=$2, last_checked_at=now(), last_check_message=$3,
+       updated_by=$4, updated_at=now() WHERE id=$1
+     RETURNING id, kind, provider, label, environment, status, key_suffix, settings,
+               last_checked_at, last_check_message, updated_at`,
+    [input.id, input.passed ? "READY" : "FAILED", input.message.slice(0, 300), input.actorId],
+  );
+  return rows[0] ?? null;
 }

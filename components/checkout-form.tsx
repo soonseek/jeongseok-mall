@@ -1,13 +1,13 @@
 "use client";
 
-import { ANONYMOUS, loadTossPayments, type TossPaymentsWidgets } from "@tosspayments/tosspayments-sdk";
+import { loadTossPayments, type TossPaymentsWidgets } from "@tosspayments/tosspayments-sdk";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCart } from "@/components/cart-provider";
 import { createClientId } from "@/lib/client-id";
 import { formatWon } from "@/lib/format";
 
-export function CheckoutForm() {
+export function CheckoutForm({ customer }: { customer: { id: string; name: string; email: string } }) {
   const { items, subtotal } = useCart();
   const shippingFee = subtotal >= 50000 || subtotal === 0 ? 0 : 3000;
   const amount = subtotal + shippingFee;
@@ -25,10 +25,10 @@ export function CheckoutForm() {
       setConfigured(Boolean(config.configured));
       if (!config.configured) return;
       const toss = await loadTossPayments(config.clientKey);
-      if (active) setWidgets(toss.widgets({ customerKey: ANONYMOUS }));
+      if (active) setWidgets(toss.widgets({ customerKey: customer.id }));
     }).catch(() => setConfigured(false));
     return () => { active = false; };
-  }, []);
+  }, [customer.id]);
 
   useEffect(() => {
     if (!widgets || amount <= 0) return;
@@ -84,7 +84,7 @@ export function CheckoutForm() {
   return <form className="checkout-layout" onSubmit={submit}>
     <section className="checkout-fields">
       <div className="checkout-section-title"><span>01</span><h2>주문자 정보</h2></div>
-      <div className="field-grid"><label><span>이름</span><input name="customerName" required maxLength={100} /></label><label><span>휴대전화</span><input name="phone" required inputMode="numeric" placeholder="01012345678" /></label><label className="wide"><span>이메일</span><input name="email" type="email" required /></label></div>
+      <div className="field-grid"><label><span>이름</span><input name="customerName" required maxLength={100} defaultValue={customer.name} /></label><label><span>휴대전화</span><input name="phone" required inputMode="numeric" placeholder="01012345678" /></label><label className="wide"><span>이메일</span><input name="email" type="email" required value={customer.email} readOnly /></label></div>
       <div className="checkout-section-title"><span>02</span><h2>배송지</h2></div>
       <div className="field-grid"><label><span>우편번호</span><input name="postalCode" required /></label><label className="wide"><span>주소</span><input name="address" required /></label><label className="wide"><span>상세 주소</span><input name="addressDetail" /></label></div>
       <div className="checkout-section-title"><span>03</span><h2>결제 수단</h2></div>

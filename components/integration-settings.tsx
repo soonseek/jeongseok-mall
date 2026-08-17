@@ -46,6 +46,15 @@ export function IntegrationSettings({ initial, canEdit }: { initial: Integration
     setPendingKind(null);
   }
 
+  async function check(kind: Kind, id: string) {
+    setPendingKind(kind); setMessage("");
+    const response = await fetch(`/api/admin/integrations/${id}/check`, { method: "POST", headers: { "x-jeongseok-request": "1" } });
+    const result = await response.json();
+    if (result.integration) setItems((current) => current.map((item) => item.id === id ? result.integration : item));
+    setMessage(result.message ?? (response.ok ? "연결을 확인했습니다." : "연결 검사에 실패했습니다."));
+    setPendingKind(null);
+  }
+
   return <div className="integration-grid">
     {definitions.map((definition) => {
       const saved = items.find((item) => item.kind === definition.kind && item.environment === "TEST");
@@ -60,6 +69,8 @@ export function IntegrationSettings({ initial, canEdit }: { initial: Integration
           <label><span>{definition.kind === "TOSS_PAYMENTS" ? "시크릿 키" : "API 키"}</span><input name="secret" type="password" disabled={!canEdit} placeholder={saved?.key_suffix ? `저장됨 ····${saved.key_suffix} (바꿀 때만 입력)` : "키 입력"} autoComplete="new-password" /></label>
           <button className="admin-primary-button" disabled={!canEdit || pendingKind === definition.kind}>{pendingKind === definition.kind ? "암호화 저장 중…" : "설정 저장"}</button>
         </form>
+        {saved?.key_suffix && <button className="integration-check-button" disabled={!canEdit || pendingKind === definition.kind} onClick={() => check(definition.kind, saved.id)}>연결 검사 · {saved.last_checked_at ? new Date(saved.last_checked_at).toLocaleString("ko-KR") : "아직 안 함"}</button>}
+        {saved?.last_check_message && <small className="integration-check-message">{saved.last_check_message}</small>}
       </article>;
     })}
     {message && <div className="admin-toast" role="status">{message}</div>}

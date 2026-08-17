@@ -23,5 +23,5 @@ export function PaymentResult() {
       .catch((error) => { setState("failed"); setMessage(error instanceof Error ? error.message : "결제를 승인하지 못했습니다."); });
   }, [paymentKey, orderId, amount, validParameters, clear]);
 
-  return <main className="result-page"><section><span className="kicker">{state === "success" ? "PAYMENT COMPLETE" : state === "failed" ? "PAYMENT FAILED" : "VERIFYING"}</span><h1>{state === "success" ? "주문이 완료됐습니다." : state === "failed" ? "승인을 완료하지 못했습니다." : "잠시만 기다려 주세요."}</h1><p>{message}</p><Link className="primary-button" href={state === "success" ? "/products" : "/cart"}>{state === "success" ? "계속 둘러보기" : "장바구니로 돌아가기"}</Link></section></main>;
+  return <main className="result-page"><section><span className="kicker">{state === "success" ? "PAYMENT COMPLETE" : state === "failed" ? "PAYMENT FAILED" : "VERIFYING"}</span><h1>{state === "success" ? "주문이 완료됐습니다." : state === "failed" ? "승인을 완료하지 못했습니다." : "잠시만 기다려 주세요."}</h1><p>{message}</p><Link className="primary-button" href={state === "success" ? "/account" : "/cart"}>{state === "success" ? "내 주문 확인" : "장바구니로 돌아가기"}</Link></section></main>;
 }

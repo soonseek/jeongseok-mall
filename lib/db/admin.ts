@@ -1,27 +1,64 @@
 import { randomUUID } from "node:crypto";
-import { execute, query, withTransaction } from "@/lib/db/client";
+import { query, withTransaction } from "@/lib/db/client";
 import { seedDatabase } from "@/lib/db/seed";
 
 export type AdminProductRow = {
-  id: string; slug: string; name: string; category: string; short_description: string;
-  price: number; stock: number; featured: boolean; status: string; updated_at: string;
+  id: string; slug: string; name: string; category: string; short_description: string; description: string;
+  price: number; compare_at_price: number | null; stock: number; featured: boolean; status: string; accent: string; updated_at: string;
+  facts: Array<{ key: string; value: string; evidence: string }>;
 };
 
 export async function adminProducts(): Promise<AdminProductRow[]> {
   await seedDatabase();
   const rows = await query<AdminProductRow>(
-    `SELECT id, slug, name, category, short_description, price, stock, featured, status, updated_at
-     FROM products ORDER BY updated_at DESC, name`,
+    `SELECT p.id, p.slug, p.name, p.category, p.short_description, p.description, p.price, p.compare_at_price,
+            p.stock, p.featured, p.status, p.accent, p.updated_at,
+            COALESCE((SELECT json_agg(json_build_object('key', f.fact_key, 'value', f.fact_value, 'evidence', f.evidence) ORDER BY f.fact_key)
+                      FROM product_facts f WHERE f.product_id=p.id), '[]'::json) AS facts
+     FROM products p ORDER BY p.updated_at DESC, p.name`,
   );
-  return rows.map((row) => ({ ...row, price: Number(row.price), stock: Number(row.stock) }));
+  return rows.map((row) => ({ ...row, price: Number(row.price), compare_at_price: row.compare_at_price == null ? null : Number(row.compare_at_price), stock: Number(row.stock), facts: typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts }));
 }
 
-export async function updateAdminProduct(input: { id: string; name: string; shortDescription: string; price: number; stock: number; status: string; featured: boolean }): Promise<boolean> {
-  return (await execute(
-    `UPDATE products SET name=$2, short_description=$3, price=$4, stock=$5, status=$6,
-       featured=$7, updated_at=now() WHERE id=$1`,
-    [input.id, input.name, input.shortDescription, input.price, input.stock, input.status, input.featured],
-  )) > 0;
+type AdminProductInput = {
+  name: string; slug: string; category: string; shortDescription: string; description: string;
+  price: number; compareAtPrice: number | null; stock: number; status: string; featured: boolean; accent: string;
+  facts: Array<{ key: string; value: string; evidence: string }>;
+};
+
+async function replaceProductFacts(tx: Parameters<Parameters<typeof withTransaction>[0]>[0], productId: string, facts: AdminProductInput["facts"]) {
+  await tx.execute("DELETE FROM product_facts WHERE product_id=$1", [productId]);
+  for (const fact of facts) {
+    await tx.execute(
+      "INSERT INTO product_facts(id, product_id, fact_key, fact_value, evidence, status) VALUES ($1,$2,$3,$4,$5,'VERIFIED')",
+      [`fact-${productId}-${fact.key}`, productId, fact.key, fact.value, fact.evidence],
+    );
+  }
+}
+
+export async function createAdminProduct(input: AdminProductInput): Promise<AdminProductRow> {
+  const id = randomUUID();
+  await withTransaction(async (tx) => {
+    await tx.execute(
+      `INSERT INTO products(id, slug, name, category, short_description, description, price, compare_at_price, stock, featured, status, accent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, input.slug, input.name, input.category, input.shortDescription, input.description, input.price, input.compareAtPrice, input.stock, input.featured, input.status, input.accent],
+    );
+    await replaceProductFacts(tx, id, input.facts);
+  });
+  return (await adminProducts()).find((product) => product.id === id)!;
+}
+
+export async function updateAdminProduct(input: AdminProductInput & { id: string }): Promise<boolean> {
+  return withTransaction(async (tx) => {
+    const changed = await tx.execute(
+      `UPDATE products SET slug=$2, name=$3, category=$4, short_description=$5, description=$6,
+         price=$7, compare_at_price=$8, stock=$9, status=$10, featured=$11, accent=$12, updated_at=now() WHERE id=$1`,
+      [input.id, input.slug, input.name, input.category, input.shortDescription, input.description, input.price, input.compareAtPrice, input.stock, input.status, input.featured, input.accent],
+    );
+    if (changed > 0) await replaceProductFacts(tx, input.id, input.facts);
+    return changed > 0;
+  });
 }
 
 export type AdminOrderRow = {
@@ -56,6 +93,40 @@ export async function supportRuns(): Promise<SupportRunRow[]> {
   );
 }
 
+export type SupportTicketRow = {
+  id: string;
+  subject: string;
+  summary: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED";
+  created_at: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  conversation_id: string | null;
+};
+
+export async function supportTickets(): Promise<SupportTicketRow[]> {
+  return query<SupportTicketRow>(
+    `SELECT t.id, t.subject, t.summary, t.status, t.created_at, t.conversation_id,
+            u.name AS customer_name, u.email AS customer_email
+     FROM support_tickets t
+     LEFT JOIN users u ON u.id=t.user_id
+     ORDER BY CASE t.status WHEN 'OPEN' THEN 0 WHEN 'IN_PROGRESS' THEN 1 ELSE 2 END,
+              t.created_at DESC
+     LIMIT 100`,
+  );
+}
+
+export async function updateSupportTicketStatus(id: string, status: SupportTicketRow["status"]): Promise<SupportTicketRow | null> {
+  const rows = await query<SupportTicketRow>(
+    `UPDATE support_tickets SET status=$2 WHERE id=$1
+     RETURNING id, subject, summary, status, created_at, conversation_id,
+       (SELECT name FROM users WHERE users.id=support_tickets.user_id) AS customer_name,
+       (SELECT email FROM users WHERE users.id=support_tickets.user_id) AS customer_email`,
+    [id, status],
+  );
+  return rows[0] ?? null;
+}
+
 export async function getOrderPaymentForCancel(orderId: string): Promise<{ order_id: string; order_status: string; payment_id: string; payment_key: string | null; payment_status: string; amount: number } | null> {
   const rows = await query<{ order_id: string; order_status: string; payment_id: string; payment_key: string | null; payment_status: string; amount: number }>(
     `SELECT o.id AS order_id, o.status AS order_status, p.id AS payment_id, p.payment_key,
@@ -66,11 +137,21 @@ export async function getOrderPaymentForCancel(orderId: string): Promise<{ order
   return rows[0] ? { ...rows[0], amount: Number(rows[0].amount) } : null;
 }
 
+export async function getCancellationByKey(idempotencyKey: string): Promise<{ order_id: string; status: string } | null> {
+  const rows = await query<{ order_id: string; status: string }>(
+    `SELECT p.order_id, c.status FROM payment_cancellations c
+     JOIN payments p ON p.id=c.payment_id WHERE c.idempotency_key=$1 LIMIT 1`,
+    [idempotencyKey],
+  );
+  return rows[0] ?? null;
+}
+
 export async function completeCancellation(input: { orderId: string; paymentId: string; reason: string; amount: number; actorId: string; idempotencyKey: string; payload: Record<string, unknown> }): Promise<void> {
   await withTransaction(async (tx) => {
     await tx.execute(
       `INSERT INTO payment_cancellations(id, payment_id, reason, amount, idempotency_key, provider_payload, status, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,'COMPLETED',$7)`,
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,'COMPLETED',$7)
+       ON CONFLICT(idempotency_key) DO UPDATE SET provider_payload=EXCLUDED.provider_payload, status='COMPLETED'`,
       [randomUUID(), input.paymentId, input.reason, input.amount, input.idempotencyKey, JSON.stringify(input.payload), input.actorId],
     );
     await tx.execute("UPDATE payments SET status='CANCELED', canceled_at=now(), provider_payload=$2::jsonb, updated_at=now() WHERE id=$1", [input.paymentId, JSON.stringify(input.payload)]);
